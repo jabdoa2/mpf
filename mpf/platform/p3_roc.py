@@ -328,6 +328,16 @@ class HardwarePlatform(Platform):
                 self.machine.switch_controller.process_switch(state=0,
                                                               num=event_value,
                                                               debounced=False)
+
+            elif event_type == pinproc.EventTypeAccelerometerX:
+                self.log.info("Got Accelerometer value X. Value: %s", event_value)
+            elif event_type == pinproc.EventTypeAccelerometerY:
+                self.log.info("Got Accelerometer value Y. Value: %s", event_value)
+            elif event_type == pinproc.EventTypeAccelerometerZ:
+                self.log.info("Got Accelerometer value Z. Value: %s", event_value)
+            elif event_type == pinproc.EventTypeAccelerometerIRQ:
+                self.log.info("Got Accelerometer value IRQ. Value: %s", event_value)
+
             else:
                 self.log.warning("Received unrecognized event from the P3-ROC. "
                                  "Type: %s, Value: %s", event_type, event_value)
