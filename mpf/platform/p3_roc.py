@@ -107,12 +107,24 @@ class HardwarePlatform(Platform):
             or self.machine_type == pinproc.MachineTypeSternSAM\
             or self.machine_type == pinproc.MachineTypePDB
 
-        self.configure_accelerometer()
+        self.configure_accelerometer(motion=True, periodic=True)
 
     def __repr__(self):
         return '<Platform.P3-ROC>'
 
-    def configure_accelerometer(self):
+    def configure_accelerometer(self, periodic=False, motion=True):
+
+        # for auto-polling of accelerometer every 128 ms (8 times a sec). set 0x0F
+        # disable polling + IRQ status addr FF_MT_SRC
+        enable = 0
+        if periodic:
+            enable |= 0x0F
+
+        if motion:
+            enable |= 0x1E00
+
+        self.proc.write_data(6, 0x000, enable);
+
         # set standby
         self.proc.write_data(6, 0x12A, 0);
 
@@ -128,11 +140,12 @@ class HardwarePlatform(Platform):
         # Set FF_TRANSIENT_CONFIG (0x1D)
         self.proc.write_data(6, 0x11D, 0x1E);
 
-        # Enable Motion interrupts
-        self.proc.write_data(6, 0x12D, 0x20);
+        if motion:
+            # Enable Motion interrupts
+            self.proc.write_data(6, 0x12D, 0x20);
 
-        # Direct motion interrupt to int0 pin (default)
-        self.proc.write_data(6, 0x12E, 0x20);
+            # Direct motion interrupt to int0 pin (default)
+            self.proc.write_data(6, 0x12E, 0x20);
 
         # ??? (alternativ 0x3D)
         self.proc.write_data(6, 0x12A, 0x05);
@@ -141,10 +154,7 @@ class HardwarePlatform(Platform):
         self.proc.write_data(6, 0x12B, 0x02);
 
 
-        # for auto-polling of accelerometer every 128 ms (8 times a sec). set 0x0F
-        # disable polling + IRQ status addr FF_MT_SRC
-        self.proc.write_data(6, 0x000, 0x1E0F);
-
+        self.proc.flush()
 
     def configure_driver(self, config, device_type='coil'):
         """ Creates a P3-ROC driver.
