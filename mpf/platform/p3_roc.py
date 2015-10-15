@@ -107,41 +107,43 @@ class HardwarePlatform(Platform):
             or self.machine_type == pinproc.MachineTypeSternSAM\
             or self.machine_type == pinproc.MachineTypePDB
 
+        self.configure_accelerometer()
+
     def __repr__(self):
         return '<Platform.P3-ROC>'
 
     def configure_accelerometer(self):
         # set standby
-        proc.write_data(6, 0x12A, 0);
+        self.proc.write_data(6, 0x12A, 0);
 
         # Set HP_FILTER_CUTOFF (0x0F)
-        proc.write_data(6, 0x10F, 0x03);
+        self.proc.write_data(6, 0x10F, 0x03);
 
         # Set FF_TRANSIENT_COUNT (0x20)
-        proc.write_data(6, 0x120, 1);
+        self.proc.write_data(6, 0x120, 1);
 
         # Set FF_TRANSIENT_THRESH (0x1F)
-        proc.write_data(6, 0x11F, 1);
+        self.proc.write_data(6, 0x11F, 1);
 
         # Set FF_TRANSIENT_CONFIG (0x1D)
-        proc.write_data(6, 0x11D, 0x1E);
+        self.proc.write_data(6, 0x11D, 0x1E);
 
         # Enable Motion interrupts
-        proc.write_data(6, 0x12D, 0x20);
+        self.proc.write_data(6, 0x12D, 0x20);
 
         # Direct motion interrupt to int0 pin (default)
-        proc.write_data(6, 0x12E, 0x20);
+        self.proc.write_data(6, 0x12E, 0x20);
 
         # ??? (alternativ 0x3D)
-        proc.write_data(6, 0x12A, 0x05);
+        self.proc.write_data(6, 0x12A, 0x05);
 
         # ???
-        proc.write_data(6, 0x12B, 0x02);
+        self.proc.write_data(6, 0x12B, 0x02);
 
 
         # for auto-polling of accelerometer every 128 ms (8 times a sec). set 0x0F
         # disable polling + IRQ status addr FF_MT_SRC
-        proc.write_data(6, 0x000, 0x1E00);
+        self.proc.write_data(6, 0x000, 0x1E0F);
 
 
     def configure_driver(self, config, device_type='coil'):
