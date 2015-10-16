@@ -28,17 +28,18 @@ class Accelerometer(Device):
                 periodicRead=False,
                 tiltThreshold=config['events'].keys()[0])
 
-            self.log.info("Will use hardware interrupt")
+            self.log.info("Will use hardware interrupt. Can also do leveling.")
 
 
 
         elif len(config['events']) > 1:
             self.platform.configure_accelerometer(self,
                 tiltInterrupt=False,
-                periodicRead=True)
+                periodicRead=True,
+                readWithHighPass=True)
 
             self.log.info("Can only handle one threshold in hardware. "
-                          "Will read permanently!")
+                          "Will read permanently! Leveling not possible.")
 
 
     def received_hit(self):
