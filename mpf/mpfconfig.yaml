@@ -42,6 +42,7 @@ mpf:
         ball_lock.BallLock
         multiball.Multiball
         ball_save.BallSave
+        accelerometer.Accelerometer
 
     plugins:
         mpf.plugins.auditor.Auditor
@@ -571,6 +572,12 @@ config_validator:
       multiple_hit_window: single|ticks_int|300ms
       settle_time: single|ticks_int|5s
       tilt_warnings_player_var: single|str|tilt_warnings
+
+    accelerometers:
+      events: single|float:str|None
+      debug: single|bool|False
+      tags: list|str|None
+      label: single|str|%
 
     timing:
       hz: single|int|30

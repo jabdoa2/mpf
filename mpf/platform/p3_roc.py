@@ -22,6 +22,7 @@ import logging
 import re
 import time
 import sys
+import math
 from copy import deepcopy
 
 try:
@@ -107,53 +108,84 @@ class HardwarePlatform(Platform):
             or self.machine_type == pinproc.MachineTypeSternSAM\
             or self.machine_type == pinproc.MachineTypePDB
 
-        self.configure_accelerometer(motion=True, periodic=True)
+
+
+        self.acceleration = [0] * 3
+        self.accelerometer_device = False
+        self.configure_accelerometer(tiltInterrupt=True, periodicRead=True)
 
     def __repr__(self):
         return '<Platform.P3-ROC>'
 
-    def configure_accelerometer(self, periodic=False, motion=True):
+    def scale_accelerometer_to_g(self, raw_value):
+        # raw value is 0 to 65534 (LSB bit 0 and 1 always 0) -> 14 bit
+        # scale is -2g to 2g (2 complement)
+        result = float((raw_value & 0x7FFF)) / 0x7FFF * 2
+        if raw_value & 0x8000:
+                result *= -1
+        return result
 
-        # for auto-polling of accelerometer every 128 ms (8 times a sec). set 0x0F
-        # disable polling + IRQ status addr FF_MT_SRC
+    def configure_accelerometer(self, device, periodicRead=False, tiltInterrupt=True, tiltThreshold=0.2, readWithHighPass=False):
+        self.accelerometer_device = device
+
         enable = 0
-        if periodic:
+        if periodicRead:
+            # enable polling every 128ms
             enable |= 0x0F
 
-        if motion:
+        if tiltInterrupt:
+            # configure interrupt at P3-ROC
             enable |= 0x1E00
 
+        # configure some P3-Roc registers
         self.proc.write_data(6, 0x000, enable);
 
-        # set standby
+        # CTRL_REG1 - set to standby
         self.proc.write_data(6, 0x12A, 0);
 
-        # Set HP_FILTER_CUTOFF (0x0F)
-        self.proc.write_data(6, 0x10F, 0x03);
+        if peridicRead:
+            # XYZ_DATA_CFG - enable/disable high pass filter, scale 0 to 2g
+            self.proc.write_data(6, 0x10E, 0x00 | (bool(readWithHighPass) * 0x10));
 
-        # Set FF_TRANSIENT_COUNT (0x20)
-        self.proc.write_data(6, 0x120, 1);
 
-        # Set FF_TRANSIENT_THRESH (0x1F)
-        self.proc.write_data(6, 0x11F, 1);
+        if tiltInterrupt:
+            # HP_FILTER_CUTOFF - cutoff at 2Hz
+            self.proc.write_data(6, 0x10F, 0x03);
 
-        # Set FF_TRANSIENT_CONFIG (0x1D)
-        self.proc.write_data(6, 0x11D, 0x1E);
+            # FF_TRANSIENT_COUNT - set debounce counter
+            # number of timesteps where the threshold has to be reached
+            # time step is 1.25ms
+            self.proc.write_data(6, 0x120, 1);
 
-        if motion:
-            # Enable Motion interrupts
+            # transient_threshold * 0.063g
+            # Theoretically up to 8g
+            # Since we use low noise mode limited to 4g (value of 63)
+            transient_threshold_raw = int(math.ceil(float(tiltThreshold)/0.063))
+            if transient_threshold_raw > 63:
+                self.log.warning("Tilt Threshold is too high. Limiting to 4g")
+                transient_threshold_raw = 63
+
+            # TRANSIENT_THS - Set threshold (0-127)
+            self.proc.write_data(6, 0x11F, transient_threshold_raw & 0x7F);
+
+            # Set FF_TRANSIENT_CONFIG (0x1D)
+            # enable latching, all axis, no high pass filter bypass
+            self.proc.write_data(6, 0x11D, 0x1E);
+
+            # CTRL_REG4 - Enable transient interrupt
             self.proc.write_data(6, 0x12D, 0x20);
 
-            # Direct motion interrupt to int0 pin (default)
+            # CTRL_REG5 - Enable transient interrupt (goes to INT1 by default)
             self.proc.write_data(6, 0x12E, 0x20);
 
-        # ??? (alternativ 0x3D)
+        # CTRL_REG1 - set device to active and in low noise mode
+        # 800HZ output data rate
         self.proc.write_data(6, 0x12A, 0x05);
 
-        # ???
+        # CTRL_REG2 - set no sleep, high resolution mode
         self.proc.write_data(6, 0x12B, 0x02);
 
-
+        # flush data to proc
         self.proc.flush()
 
     def configure_driver(self, config, device_type='coil'):
@@ -341,14 +373,31 @@ class HardwarePlatform(Platform):
                                                               num=event_value,
                                                               debounced=False)
 
+            # The P3-ROC will always send all three values sequentially.
+            # Therefore, we will trigger after the Z value
             elif event_type == pinproc.EventTypeAccelerometerX:
-                self.log.info("Got Accelerometer value X. Value: %s", event_value)
+                self.acceleration[0] = event_value
+                self.log.debug("Got Accelerometer value X. Value: %s", event_value)
             elif event_type == pinproc.EventTypeAccelerometerY:
-                self.log.info("Got Accelerometer value Y. Value: %s", event_value)
+                self.acceleration[1] = event_value
+                self.log.debug("Got Accelerometer value Y. Value: %s", event_value)
             elif event_type == pinproc.EventTypeAccelerometerZ:
-                self.log.info("Got Accelerometer value Z. Value: %s", event_value)
+                self.acceleration[2] = event_value
+
+                # trigger here
+                if self.accelerometer_device:
+                    self.accelerometer_device.update_acceleration(
+                            self.scale_accelerometer_to_g(self.acceleration[0]),
+                            self.scale_accelerometer_to_g(self.acceleration[1]),
+                            self.scale_accelerometer_to_g(self.acceleration[2]))
+                self.log.debug("Got Accelerometer value Z. Value: %s", event_value)
+
+            # The P3-ROC sends interrupts when 
             elif event_type == pinproc.EventTypeAccelerometerIRQ:
-                self.log.info("Got Accelerometer value IRQ. Value: %s", event_value)
+                self.log.debug("Got Accelerometer value IRQ. Value: %s", event_value)
+                # trigger here
+                if self.accelerometer_device:
+                    self.accelerometer_device.received_hit()
 
             else:
                 self.log.warning("Received unrecognized event from the P3-ROC. "
